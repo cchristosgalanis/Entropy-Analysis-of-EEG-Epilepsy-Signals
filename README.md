@@ -111,6 +111,9 @@ The quantitative separation between the categories is small, attributed to the *
 * **Logarithmic Compression:** The use of the logarithm compresses the information, making minimal changes in entropy difficult to detect.
 * **Averaging Effect:** It calculates the **average uncertainty** of the entire signal, overlooking crucial instantaneous events that occur in intermediate states (N, F).
 
+### Entropy Distribution
+![Entropy_Distribution](Diagram/Entropy_Distribution.png)
+
 ---
 
 ### 📚 Bibliography
