@@ -1,7 +1,7 @@
 % Christos Galanis AEM:2111 
 
 %main function for project
-function entropy_EEG_analysis
+function entropy_EEG_analysis1
     close all;
     clc;
 
@@ -41,7 +41,7 @@ function entropy_EEG_analysis
     end
 
     %call EnPlot for entropies
-    EnPlot(entropyZ,entropyO,entropyN,entropyF,entropyS);
+    %EnPlot(entropyZ,entropyO,entropyN,entropyF,entropyS);
 
 % ------ Non Linear Analysis -------
     
@@ -50,10 +50,14 @@ function entropy_EEG_analysis
     % max_tau 
     max_tau = 50;
     max_dim = 15;
+    fs = 173.61; %change to correct frequency
+    maxiter = 100; %steps forward to calculate divergence
+    %meanperiod = 50; %using optimal tau (Theiler window)
+    tlinear = 3:8; %or 2:8 , being hardcored but will be hybrid
     
     categories = {Z_EEG_data, O_EEG_data, N_EEG_data, F_EEG_data, S_EEG_data};
     names = {'Z (Healthy Open)', 'O (Healthy Closed)', 'N (Inter-Hemi)', 'F (Inter-Focus)', 'S (Ictal)'};
-    colors = {'b', 'w', 'g', 'm', 'r'};
+    colors = {'b', 'c', 'g', 'm', 'r'};
     
     %figure for AMI curve
     ami_fig = figure('Name', 'Average Mutual Information Analysis','Color','w');
@@ -62,13 +66,19 @@ function entropy_EEG_analysis
     xlabel('Time Delay (\tau)');
     ylabel('AMI (bits)');
 
-
     %figure for FNN curve
     fnn_fig = figure('Name',"FNN Analysis",'Color','w');
     title('FNN Fractiono vs Embedding Dimension');
     xlabel("Embedding Dimension");
     ylabel("FNN (%)");
     grid on; hold on;
+
+    %figure for LLE_divergence curve
+    lle_fig = figure('Name',"LLE Divergence Analysis",'Color','w');
+    hold on; grid on;
+    title('Average Logarithmic Divergence (LLE)');
+    xlabel('Time Steps (k)');
+    ylabel('Divergence d(k)');
     
     % Loop through each category
     for i = 1:length(categories)
@@ -78,6 +88,7 @@ function entropy_EEG_analysis
         
         fprintf('Processing Category: %s ...\n', current_name);
         
+        % ---- Calculation/Plot for AMI/optimal tau ----
         %calculate ami matrix
         ami_matrix = Compute_AMI_Matrix(current_data, max_tau);
         
@@ -90,10 +101,13 @@ function entropy_EEG_analysis
         figure(ami_fig);
         Plot_AMI_Curve(ami_matrix, current_name, current_color);
 
+        % ---- Calculation/Plot for Embedding Dimension ----
         %finding optimal embedding dimension m
         [num_signal,~] = size(current_data);
         m_vector = zeros(num_signal,1);
         fnn_matrix = zeros(num_signal,max_dim);
+        lle_vector = zeros(num_signal,1);
+        d_matrix = zeros(num_signal,maxiter);
 
         for s = 1:num_signal
             signal = current_data(s,:);
@@ -102,26 +116,44 @@ function entropy_EEG_analysis
             [opt_m,fnn_curve] = embeddingDimensionFnn(signal,tau,max_dim);
             m_vector(s) = opt_m;
             fnn_matrix(s,:) = fnn_curve;
+
+            d_curve = lyarosenstein(signal,opt_m,tau,tau,maxiter);
+            d_matrix(s,:) = d_curve; %savine curve
+
+            %compute LLE(slope)
+            F = polyfit(tlinear,d_curve(tlinear),1);
+            lle_vector(s) = F(1)*fs;
+            
         end
         fprintf(" Average Embedding Dimension: %.2f\n", mean(m_vector));
+        fprintf(" Average LLE: %.4f\n",mean(lle_vector));
 
         figure(fnn_fig);
         plotFNN(fnn_matrix,current_name,current_color);
+
+        figure(lle_fig);
+        plotLLE_Divergence(d_matrix,current_name,current_color);
     end
     
     %final for AMI
-    figure(ami_fig);
-    legend('Location', 'northeast');
-    hold off;
+    % figure(ami_fig);
+    % legend('Location', 'northeast');
+    % hold off;
     %saveas(gcf, 'AMI_Analysis_Plot.png');
 
     %final for FNN
-    figure(fnn_fig);
-    legend('Location','northeast');
-    hold off;
+    % figure(fnn_fig);
+    % legend('Location','northeast');
+    % hold off;
     %saveas(gcf, 'FNN_Analysis_Plot.png');
     disp('Non Linear Analysis has been completed');
-    
+
+    %final for LLE
+    %final for AMI
+    figure(lle_fig);
+    legend('Location', 'northeast');
+    hold off;
+    %saveas(gcf, 'LLE_DIvergence_Plot.png');
 end
 
 %function for calculate entropy for each category
@@ -344,4 +376,69 @@ function plotFNN(fnn_matrix,name,color)
     x_axis = 1:length(mean_curve);
 
     plot(x_axis,mean_curve,'Color',color,'LineWidth',2,'DisplayName',name);
+end
+
+%Built in Rosenstein algorithm for calculating LLE(largest lyapunov exponent)
+function d = lyarosenstein(x,m,tao,meanperiod,maxiter) 
+% d:divergence of nearest trajectoires
+% x:signal
+% tao:time delay
+% m:embedding dimension
+
+    N=length(x);
+    M=N-(m-1)*tao;
+    Y=psr_deneme(x,m,tao);
+
+    for i=1:M
+        x0=ones(M,1)*Y(i,:);
+        distance=sqrt(sum((Y-x0).^2,2));
+        for j=1:M
+            if abs(j-i)<=meanperiod
+                distance(j)=1e10;
+            end
+        end
+    [neardis(i) nearpos(i)]=min(distance);
+    end
+
+    for k=1:maxiter
+        maxind=M-k;
+        evolve=0;
+        pnt=0;
+        for j=1:M
+            if j<=maxind && nearpos(j)<=maxind
+                dist_k=sqrt(sum((Y(j+k,:)-Y(nearpos(j)+k,:)).^2,2));
+                if dist_k~=0
+                    evolve=evolve+log(dist_k);
+                    pnt=pnt+1;
+                end
+            end
+        end
+        if pnt > 0
+            d(k)=evolve/pnt;
+        else
+            d(k)=0;
+        end
+    end
+end
+
+function Y=psr_deneme(x,m,tao,npoint)
+    N=length(x);
+    if nargin == 4
+    M=npoint;
+    else
+    M=N-(m-1)*tao;
+    end
+
+    Y=zeros(M,m); 
+
+    for i=1:m
+        Y(:,i)=x((1:M)+(i-1)*tao)';
+    end
+end
+
+%function to plot divergence (Lyapunov Exponent curve)
+function plotLLE_Divergence(d_matrix,current_name,current_color)
+    mean_curve = mean(d_matrix,1);
+    maxiter = length(mean_curve);
+    plot(1:maxiter,mean_curve,'Color',current_color,'LineWidth',1.5,'DisplayName',current_name);
 end
