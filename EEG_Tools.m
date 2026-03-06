@@ -137,6 +137,11 @@ classdef EEG_Tools
                 if found_tau == 1
                     found_tau = find(curve < curve(1)/exp(1),1); %by various papers | using as final value first value div by e
                 end
+                %there is an option tha find() returns nothing if it finds anything, and it returns found_tau[] that is empty
+                %so we add one more check before final saving
+                if isempty(found_tau)
+                    found_tau = max_tau;
+                end
                 optimal_tau_vec(s) = found_tau;
             end
         end
@@ -150,7 +155,6 @@ classdef EEG_Tools
             
             plot(x_axis, mean_curve, 'Color', color, 'LineWidth', 2, 'DisplayName', name);
         end
-
 
         %function to calculate embedding (m)
         function [optimal_m, fnn_ratio] = embeddingDimensionFnn(signal, tau, max_dim)
