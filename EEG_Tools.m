@@ -82,16 +82,20 @@ classdef EEG_Tools
 
         % function to calculate AMI matrix
         function ami_matrix = Compute_AMI_Matrix(signal_data, max_tau)
+            n_bins = 32;
             % Get dimensions
             [num_signals, ~] = size(signal_data);
-            n_bins = 32;
             
             ami_matrix = zeros(num_signals, max_tau);
             
             % Loop through each signal
             for s = 1:num_signals
                 signal = signal_data(s, :);
-                
+
+                %using this lines of code to have specific edges for each signal
+                step = (max(signal) - min(signal)) / n_bins;
+                xedges = min(signal) : step : max(signal);
+                yedges = min(signal) : step : max(signal);
                 
                 for t = 1:max_tau
                     %shifted vectors
@@ -99,8 +103,7 @@ classdef EEG_Tools
                     y = signal(t+1:end);
                     
                     % 2D Histogram
-                    N = histcounts2(x, y, n_bins);
-                    p_xy = N / sum(N(:));
+                    p_xy = histcounts2(x, y,xedges,yedges,'Normalization','probability');
                     
                     % Marginals
                     p_x = sum(p_xy, 2);
@@ -130,6 +133,9 @@ classdef EEG_Tools
                         found_tau = t;
                         break; 
                     end
+                end
+                if found_tau == 1
+                    found_tau = find(curve < curve(1)/exp(1),1); %by various papers | using as final value first value div by e
                 end
                 optimal_tau_vec(s) = found_tau;
             end
@@ -289,6 +295,65 @@ classdef EEG_Tools
             maxiter = length(mean_curve);
             plot(1:maxiter,mean_curve,'Color',current_color,'LineWidth',1.5,'DisplayName',current_name);
         end
+
+        %function to calculate permutation entropy
+        function perm_en = PermEn(signal,m,tau)
+            %arguments: signal:1D array, m:optimal Dimension, tau:optimal tau
+            %outcome: permutation entropy for each type of signal
+            n = length(signal);
+            n_vectors = n - (m-1)*tau;
+
+            for i = 1:length(n_vectors)
+                vectors(:,1) = signal(1 : (i-1)+(m*tau) : n_vectors + (i-1)*tau);
+            end
+
+            [~,permutations] = sort(vectors,2);
+            [~,~,ic] = unique(permutations,'rows');
+            counts = accumarray(ic,1);
+            probs = counts / n_vectors;
+            perm_en = -sum(probs .*log2(probs + (1e-12)));
+
+            %normalize outcome
+            perm_en = perm_en / log2(factorial(m));
+        end
+
+        %function to plot permutation entropy
+        function PermPlot(peZ,peO,peN,peF,peS)
+            category_label = {peZ,peO,peN,peF,peS};
+            categories = length(category_label);
+
+            category_name = {'Z','O','N','F','S'};
+            colours = {'b','c','g','m','r'};
+
+            figure('Name','Permutation Entropy Distribution','Color','w');
+            hold on;
+            grid on;
+
+            title('Permutation Entropy Distribution (Gaussian Fit)');
+            xlabel('Permutation Entropy Value');
+            ylabel('Probability Density');
+
+            mean_values = zeros(categories,1);
+            std_values = zeros(categories,1);
+
+            for i = 1:categories
+                temp_mean = mean(category_label{i});
+                temp_std = std(category_label{i});
+
+                mean_values(i) = temp_mean;
+                std_values(i) = temp_std;
+
+                x = linespace(temp_mean - 4*temp_std, temp_mean + 4*temp_std,100);
+                y = normpdf(x,temp_mean,temp_std);
+
+                plot(x,y,'Color',colours{i},'LineWidth',2,'DisplayName',category_name{i});
+            end
+
+            legend('Location','northeast');
+            hold off; grid off;
+        end
         
     end
 end
+
+
